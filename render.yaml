@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: video-downloader-mcp
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: MAX_FILE_MB
+        value: "150"
+      - key: FILE_TTL_MINUTES
+        value: "60"
+      - key: MAX_DOWNLOADS_PER_HOUR
+        value: "40"
