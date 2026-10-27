@@ -23,24 +23,18 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _VIDEO_EXTENSIONS = {"mp4", "m4v", "mov", "webm", "mkv", "avi", "flv", "wmv"}
 _AUDIO_EXTENSIONS = {"mp3", "m4a", "aac", "opus", "ogg", "wav"}
 
-_FORMATS = {
-    "360p": (
-        "bv*[height<=360][ext=mp4]+ba[ext=m4a]/b[height<=360][ext=mp4]/"
-        "bv*[height<=360]+ba/b[height<=360]/b"
-    ),
-    "480p": (
-        "bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/"
-        "bv*[height<=480]+ba/b[height<=480]/b"
-    ),
-    "720p": (
-        "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/"
-        "bv*[height<=720]+ba/b[height<=720]/b"
-    ),
-    "1080p": (
-        "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/"
-        "bv*[height<=1080]+ba/b[height<=1080]/b"
-    ),
-}
+def _quality_format(short_side: int) -> str:
+    """Prefer landscape by height and portrait by width (short side <= limit)."""
+    h = str(short_side)
+    return (
+        f"bv*[height<={h}][ext=mp4]+ba[ext=m4a]/b[height<={h}][ext=mp4]/"
+        f"bv*[height<={h}]+ba/b[height<={h}]/"
+        f"bv*[width<={h}][ext=mp4]+ba[ext=m4a]/b[width<={h}][ext=mp4]/"
+        f"bv*[width<={h}]+ba/b[width<={h}]/b"
+    )
+
+
+_FORMATS = {f"{height}p": _quality_format(height) for height in (360, 480, 720, 1080)}
 
 
 class DownloadError(RuntimeError):
@@ -155,9 +149,17 @@ class VideoDownloader:
                 duration=duration_value,
             )
 
+            actual_width = video.get("width")
             actual_height = video.get("height")
             if audio_only:
                 actual_quality = "mp3 192kbps"
+            elif (
+                isinstance(actual_width, int)
+                and isinstance(actual_height, int)
+                and actual_width > 0
+                and actual_height > 0
+            ):
+                actual_quality = f"{min(actual_width, actual_height)}p"
             elif isinstance(actual_height, int) and actual_height > 0:
                 actual_quality = f"{actual_height}p"
             else:
@@ -221,9 +223,16 @@ class VideoDownloader:
 
         heights = set()
         for fmt in video.get("formats") or []:
-            height = fmt.get("height")
-            if isinstance(height, int) and height > 0 and fmt.get("vcodec") not in (None, "none"):
-                heights.add(height)
+            if fmt.get("vcodec") in (None, "none"):
+                continue
+            width, height = fmt.get("width"), fmt.get("height")
+            short_side = None
+            if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+                short_side = min(width, height)
+            elif isinstance(height, int) and height > 0:
+                short_side = height
+            if short_side:
+                heights.add(short_side)
         standard = [h for h in (144, 240, 360, 480, 720, 1080, 1440, 2160) if h in heights]
         available = [f"{h}p" for h in standard]
         if not available and video.get("height"):

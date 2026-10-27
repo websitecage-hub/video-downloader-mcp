@@ -1,4 +1,4 @@
-from app.downloader import VideoDownloader, normalize_quality
+from app.downloader import _FORMATS, VideoDownloader, normalize_quality
 
 
 def test_normalize_quality():
@@ -10,6 +10,11 @@ def test_normalize_quality():
     assert normalize_quality("240p") == "360p"
     assert normalize_quality("4k") == "1080p"
     assert normalize_quality("nonsense") == "720p"
+
+
+def test_format_selector_handles_portrait_video():
+    assert "width<=720" in _FORMATS["720p"]
+    assert "height<=720" in _FORMATS["720p"]
 
 
 def test_first_video_from_playlist():
