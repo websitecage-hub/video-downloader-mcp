@@ -52,7 +52,9 @@ Render sets `PORT` and `RENDER_EXTERNAL_URL` automatically. The app binds to
 `0.0.0.0:$PORT`.
 
 Free instances spin down after inactivity, so the first request after a pause can
-take 30–60 seconds while the container starts.
+take 30–60 seconds while the container starts. Temporary files live on the
+instance's ephemeral disk, so download links stop working if the service restarts
+or spins down before the link is used. Download and open links promptly.
 
 ## Configuration
 
