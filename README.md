@@ -1,4 +1,10 @@
-# Video Downloader MCP
+# Video Downloader & Analysis MCP
+
+A public, no-auth MCP server that lets ChatGPT (or any MCP client) **download** public
+videos and audio, and **understand** them. It builds a timestamped, text-first map of a
+video — chapters, captions, on-screen OCR text, audio structure, motion — and returns real
+frames when the model needs to *see* something. Powered by yt-dlp, ffmpeg, Tesseract, and
+SQLite FTS5. No external paid APIs.
 
 ## Live deployment
 
@@ -6,157 +12,119 @@
 - **Health:** https://video-downloader-mcp.onrender.com/health
 - **Technical brief:** https://video-mcp-brief.bramble-cannon.workers.dev
 
-A public, no-auth MCP server that lets ChatGPT download videos and audio from
-YouTube, TikTok, Instagram, Facebook, X/Twitter, Reddit, Vimeo, Twitch clips,
-Dailymotion, and many other sites. Powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-and ffmpeg, packaged for Render's free Docker tier.
-
-> ChatGPT cannot receive a binary file through an MCP tool. The tools download the
-> media to the server and return a **temporary direct link**. The user clicks the
-> link to save the file. Links expire automatically (60 minutes by default).
+> ChatGPT cannot receive a binary file through an MCP tool. Download tools return a
+> **temporary direct link** the user clicks. Analysis tools return a session id plus
+> evidence; the inline player card (and the standalone `/watch/{session_id}` page) let a
+> human watch the video with clickable chapters and transcript.
 
 ## Tools
 
+### Analysis (the reason this exists)
+
 | Tool | What it does |
 | --- | --- |
-| `download_video(url, quality="720p")` | Downloads a video, returns a temporary MP4 link plus metadata. |
-| `download_audio(url)` | Extracts MP3 audio at 192 kbps, returns a temporary link. |
-| `get_video_info(url)` | Returns title, platform, uploader, duration, thumbnail, and available qualities without downloading. |
+| `open_video(url, quality="720p")` | Downloads the video, fetches captions, indexes keyframes into chapters, reads on-screen text, analyzes audio, and returns a **contact sheet** + timestamped chapter map + `session_id`. |
+| `get_timeline(session_id)` | The complete textual map: every chapter with start/end, title, and summary. |
+| `get_chapter(session_id, chapter)` | Deep evidence for one chapter: real frames, transcript text, OCR, per-shot visual stats and motion, audio events. |
+| `search_video(session_id, query, kind, limit)` | Search captions, OCR, and chapter text; returns moments with timestamps. |
+| `get_frames(session_id, timestamps?, chapter?, start?, end?, count?, ocr?)` | Extract exact frames and read their on-screen text. |
+| `get_motion(session_id, start?, end?, count?)` | Per-frame pixel-change scores, peak moment, and a labelled filmstrip. |
+| `get_audio(session_id, start?, end?)` | Speech-vs-silence timeline, waveform, and spectrogram. |
+| `get_transcript(session_id, start?, end?, limit?, offset?)` | The full caption track with timestamps. |
+| `list_sessions()` / `close_video(session_id)` | Manage active sessions. |
 
-## Add it to ChatGPT
+### Downloads
 
-1. Open **ChatGPT → Settings → Connectors → Advanced → Developer mode**.
-2. Click **Create** / **Add custom connector**.
-3. Name it `Video Downloader`.
-4. MCP server URL: `https://<your-service>.onrender.com/mcp`
-5. Authentication: **No authentication**.
-6. In a chat, ask: *"Download this video: https://..."* and open the link ChatGPT returns.
+| Tool | What it does |
+| --- | --- |
+| `download_video(url, quality="720p")` | Downloads a video and returns a temporary MP4 link. |
+| `download_audio(url)` | Extracts MP3 (192 kbps) and returns a temporary link. |
+| `get_video_info(url)` | Metadata and available qualities without downloading. |
 
-Custom connectors require a ChatGPT plan that supports them. The server must be
-reachable over public HTTPS, which Render provides.
+## How ChatGPT should use it
 
-## Deploy on Render (free tier)
+1. `open_video(url)` **once**. Read the returned chapter timeline and contact sheet.
+2. `get_timeline(session_id)` for the full map (also included in the `open_video` result).
+3. `get_chapter(session_id, n)` for the chapters that matter — this returns real frames plus
+   the exact transcript and OCR for that window.
+4. `search_video(...)`, `get_frames(...)`, `get_motion(...)`, `get_audio(...)` as needed.
+5. Synthesise the answer and **cite timestamps**.
 
-The repo includes a `Dockerfile` and `render.yaml`.
+Reuse the `session_id`. Calling `open_video` again re-downloads and re-analyzes.
 
-### Blueprint
+## Why it is fast on a tiny server
 
-1. Push this repo to GitHub.
-2. In Render, choose **New → Blueprint** and select the repo.
-3. Apply the blueprint. Render builds the Docker image and deploys it.
-4. Copy the service URL and use `https://<service>.onrender.com/mcp` in ChatGPT.
+Render's free tier gives 0.1 CPU. The design works within that:
 
-### Manual Docker web service
+- **Keyframe-only decode.** A single `ffmpeg -skip_frame nokey` pass extracts up to 48
+  thumbnails and their exact timestamps from the `showinfo` log, instead of decoding every
+  frame.
+- **Selective visual evidence.** Only 4 frames per chapter are decoded, on demand, with
+  ffmpeg fast-seek.
+- **Text-first.** Captions, OCR, and visual statistics carry most of the understanding, so
+  images are used only where they add information.
+- **Bounded work.** One analysis job and one media operation at a time, hard timeouts on
+  every subprocess, and a 30-minute analysis cap by default.
+- **Lazy OCR.** A few high-text frames are read during `open_video`; the rest on `get_chapter`.
+- **Caching.** Thumbnails, detail frames, motion strips, waveform, and spectrogram are cached
+  per session and expire with the video.
 
-- Environment: **Docker**
-- Plan: **Free**
-- Dockerfile path: `./Dockerfile`
-- Health check path: `/health`
-- No disk, no database, no auth needed.
+## Evidence layers
 
-Render sets `PORT` and `RENDER_EXTERNAL_URL` automatically. The app binds to
-`0.0.0.0:$PORT`.
+- Shot/keyframe index with timestamps and visual stats (brightness, contrast, edge/text score,
+  palette, histogram).
+- Captions/transcript (manual or auto, best language chosen from yt-dlp metadata).
+- OCR text (Tesseract) with line boxes and a zoomed text crop.
+- Audio timeline (speech/silence), waveform, spectrogram.
+- Contact sheet, chapter storyboards, motion strips.
 
-Free instances spin down after inactivity, so the first request after a pause can
-take 30–60 seconds while the container starts. Temporary files live on the
-instance's ephemeral disk, so download links stop working if the service restarts
-or spins down before the link is used. Download and open links promptly.
+## Limits and privacy
+
+- Max 150 MB per file; 1080p max; live streams unsupported.
+- Analysis covers up to 30 minutes and up to 24 chapters (configurable).
+- Files, sessions, and links expire after 60 minutes by default.
+- Everything runs on the server; nothing is sent to a paid third party.
+- Private, paid, or login-only content may fail. The server owner can supply cookies via the
+  `YTDLP_COOKIES` environment variable.
+- On Render's free tier the instance sleeps when idle, which also ends sessions early.
 
 ## Configuration
 
-All settings are optional environment variables.
+Environment variables (all optional):
 
-| Variable | Default | Description |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `MAX_FILE_MB` | `150` | Maximum size of one downloaded file. |
-| `MAX_STORAGE_MB` | `400` | Total temporary storage cap. |
-| `FILE_TTL_MINUTES` | `60` | How long download links stay valid. |
-| `MAX_CONCURRENT_DOWNLOADS` | `2` | Parallel download jobs. |
-| `MAX_DOWNLOADS_PER_HOUR` | `40` | Global rate limit (protects the free instance). |
-| `DOWNLOAD_TIMEOUT_SECONDS` | `180` | Hard timeout per download. |
-| `PUBLIC_BASE_URL` | auto | Overrides the public URL used in download links. |
-| `YTDLP_IMPERSONATE` | `chrome` | Browser TLS impersonation target. Set empty to disable. |
-| `YTDLP_PROXY` | unset | Optional outbound proxy (`http://...` or `socks5://...`). |
-| `YTDLP_COOKIES` | unset | Netscape-format cookies.txt contents, for login-only sites. |
-| `COOKIES_FILE` | unset | Path to a cookies.txt file instead of `YTDLP_COOKIES`. |
-| `YTDLP_EXTRA_ARGS` | unset | Extra yt-dlp CLI flags, e.g. `--extractor-args youtube:player_client=android`. |
+| `MAX_FILE_MB` | `150` | Download size cap. |
+| `FILE_TTL_MINUTES` | `60` | Lifetime of files and sessions. |
+| `MAX_DOWNLOADS_PER_HOUR` | `40` | Rate limit. |
+| `ANALYSIS_MAX_SECONDS` | `1800` | Seconds of video analyzed. |
+| `MAX_SHOTS` / `MAX_CHAPTERS` | `48` / `24` | Granularity caps. |
+| `OCR_LANG` | `eng` | Tesseract language. |
+| `FFMPEG_BIN` / `FFPROBE_BIN` / `TESSERACT_BIN` | auto | Binary paths. |
+| `YTDLP_COOKIES` / `YTDLP_PROXY` / `YTDLP_IMPERSONATE` | – | Access to bot-protected sites. |
+| `ALLOW_PRIVATE_URLS` | `false` | Local testing only. Never enable publicly. |
 
-### YouTube / Instagram limitations
-
-YouTube aggressively blocks datacenter IPs. On a Render IP you may see
-*"Sign in to confirm you're not a bot"*. Options:
-
-- Supply cookies from an account via `YTDLP_COOKIES` (Netscape cookies.txt format).
-- Route downloads through a residential/mobile proxy via `YTDLP_PROXY`.
-- Try again later; YouTube's blocking is inconsistent.
-
-Instagram and Vimeo sometimes require a logged-in session for public posts. Cookies
-fix those cases too. TikTok works well with the default browser impersonation.
-
-Live streams are rejected. Private, paid, DRM-protected, and login-only content
-cannot be downloaded.
-
-## Public technical brief
-
-`site/index.html` is a self-contained page explaining the architecture, tools,
-request lifecycle, limits, security model, and deployment. To publish it as a
-static Cloudflare Worker:
+## Run locally
 
 ```bash
-python scripts/build_cloudflare_worker.py
-cd cloudflare
-npx wrangler deploy --temporary
+python -m venv .venv && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+FFMPEG_BIN=/path/to/ffmpeg FFPROBE_BIN=/path/to/ffprobe .venv/bin/python -m app.main
+# then open http://127.0.0.1:8000
 ```
 
-Wrangler's `--temporary` mode creates a public preview account without a
-Cloudflare login. The preview account can be claimed within 60 minutes to keep
-the URL long-term.
+Tesseract is optional; OCR degrades gracefully when the binary is missing.
 
-## Local development
+## Tests
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
-# ffmpeg is required for merging video+audio and MP3 extraction
-.venv/bin/python -m app.main
+FFMPEG_BIN=/path/to/ffmpeg FFPROBE_BIN=/path/to/ffprobe .venv/bin/python -m pytest -q
 ```
 
-Open `http://127.0.0.1:8000/` for the landing page and
-`http://127.0.0.1:8000/health` for health. The MCP endpoint is
-`http://127.0.0.1:8000/mcp`.
+The suite covers the downloader, storage, security, caption parsers, the FTS index, and a
+full analysis pipeline on a generated sample video (skipped automatically if ffmpeg is
+absent). The end-to-end test boots the real server and exercises the MCP tools.
 
-Run the tests (the end-to-end test generates a local video and downloads it through
-the MCP protocol):
+## Deploy
 
-```bash
-.venv/bin/python -m pytest
-```
-
-## Security notes
-
-This server is intentionally **public and unauthenticated**, as requested. Anyone
-with the URL can download media through it. It includes:
-
-- SSRF protection: only `http/https`, hostnames are resolved, and private,
-  loopback, link-local, and reserved addresses are rejected.
-- A global hourly rate limit, a concurrency limit, file-size caps, and storage caps.
-- Unguessable capability URLs for temporary files.
-- No shell execution of user input; yt-dlp runs as an argument list.
-
-For a private deployment, put the service behind a secret path or an access token
-at the proxy/CDN layer. Never enable `ALLOW_PRIVATE_URLS` on a public server.
-
-## Updating yt-dlp
-
-Sites change constantly. Update the pinned `yt-dlp` version in `requirements.txt`
-and redeploy regularly:
-
-```bash
-.venv/bin/pip install -U yt-dlp
-.venv/bin/pip freeze | grep yt-dlp
-```
-
-## License
-
-MIT. This tool is for downloading content you have the right to access and use.
-Respect each platform's terms of service and applicable copyright law.
+The repo includes `render.yaml` for a free Render Docker web service. Push to `main` and
+Render auto-deploys. The Docker image installs ffmpeg, Tesseract, and DejaVu fonts.

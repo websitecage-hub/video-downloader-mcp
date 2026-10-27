@@ -153,6 +153,18 @@ async def test_mcp_end_to_end(servers):
             tools = await session.list_tools()
             names = {tool.name for tool in tools.tools}
             assert {"download_video", "download_audio", "get_video_info"} <= names
+            assert {
+                "open_video",
+                "get_timeline",
+                "get_chapter",
+                "search_video",
+                "get_transcript",
+                "get_frames",
+                "get_motion",
+                "get_audio",
+                "list_sessions",
+                "close_video",
+            } <= names
 
             info_result = await session.call_tool("get_video_info", {"url": media_url})
             assert not info_result.is_error
@@ -181,6 +193,42 @@ async def test_mcp_end_to_end(servers):
                 audio_body = response.read()
             assert len(audio_body) > 500
 
+            opened = await session.call_tool(
+                "open_video", {"url": media_url, "quality": "360p"}
+            )
+            assert not opened.is_error
+            analysis = json.loads(opened.content[0].text)
+            assert analysis["status"] == "success", analysis
+            assert analysis["session_id"]
+            assert analysis["chapters_count"] >= 1
+            assert any(block.type == "image" for block in opened.content)
+            session_id = analysis["session_id"]
+
+            timeline = await session.call_tool("get_timeline", {"session_id": session_id})
+            assert json.loads(timeline.content[0].text)["chapters_count"] >= 1
+
+            chapter = await session.call_tool(
+                "get_chapter", {"session_id": session_id, "chapter": 1}
+            )
+            assert json.loads(chapter.content[0].text)["status"] == "success"
+            assert any(block.type == "image" for block in chapter.content)
+
+            frames = await session.call_tool(
+                "get_frames", {"session_id": session_id, "timestamps": [0.5], "max_side": 640}
+            )
+            assert json.loads(frames.content[0].text)["count"] == 1
+
+            search = await session.call_tool(
+                "search_video", {"session_id": session_id, "query": "sample"}
+            )
+            assert json.loads(search.content[0].text)["status"] == "success"
+
+            listing = await session.call_tool("list_sessions", {})
+            assert json.loads(listing.content[0].text)["count"] >= 1
+
+            closed = await session.call_tool("close_video", {"session_id": session_id})
+            assert json.loads(closed.content[0].text)["closed"] is True
+
 
 def test_health_and_pages(servers):
     app_port = servers["app_port"]
@@ -191,7 +239,7 @@ def test_health_and_pages(servers):
 
     with urllib.request.urlopen(f"http://127.0.0.1:{app_port}/", timeout=10) as response:
         page = response.read().decode()
-    assert "Video Downloader MCP" in page
+    assert "Video Downloader" in page and "Analysis MCP" in page
     assert f"/mcp" in page
 
     with pytest.raises(urllib.error.HTTPError) as exc_info:

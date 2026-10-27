@@ -2,3 +2,4 @@ mcp==2.3.0
 yt-dlp==2026.10.26
 curl-cffi==0.17.0
 uvicorn==0.54.0
+Pillow==13.0.0

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 APP_NAME = "video-downloader-mcp"
-APP_TITLE = "Video Downloader MCP"
-VERSION = "1.0.0"
+APP_TITLE = "Video Downloader & Analysis MCP"
+VERSION = "2.0.0"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -73,3 +74,39 @@ YTDLP_PROXY = os.getenv("YTDLP_PROXY", "").strip()
 
 # Escape hatch for power users, e.g. "--extractor-args youtube:player_client=android"
 YTDLP_EXTRA_ARGS = os.getenv("YTDLP_EXTRA_ARGS", "").strip()
+
+# ---------------------------------------------------------------------------
+# Analysis / evidence engine
+# ---------------------------------------------------------------------------
+
+# Binary paths. Docker installs ffmpeg and tesseract into PATH. For local
+# development you can point these at static builds.
+FFMPEG_BIN = os.getenv("FFMPEG_BIN", "").strip() or shutil.which("ffmpeg") or "ffmpeg"
+FFPROBE_BIN = os.getenv("FFPROBE_BIN", "").strip() or shutil.which("ffprobe") or "ffprobe"
+TESSERACT_BIN = os.getenv("TESSERACT_BIN", "").strip() or shutil.which("tesseract") or ""
+OCR_LANG = os.getenv("OCR_LANG", "eng").strip() or "eng"
+OCR_ENABLED = bool(TESSERACT_BIN)
+
+# Analysis is intentionally bounded so a 0.1-CPU free instance stays responsive.
+ANALYSIS_MAX_SECONDS = max(60, _env_int("ANALYSIS_MAX_SECONDS", 1800))
+MAX_SHOTS = max(8, _env_int("MAX_SHOTS", 48))
+MAX_CHAPTERS = max(3, _env_int("MAX_CHAPTERS", 24))
+MAX_FRAMES_PER_CALL = max(1, _env_int("MAX_FRAMES_PER_CALL", 6))
+MAX_CHAPTER_IMAGES = max(1, _env_int("MAX_CHAPTER_IMAGES", 4))
+MAX_ANALYSIS_FILE_MB = max(1, _env_int("MAX_ANALYSIS_FILE_MB", 150))
+MAX_ANALYSIS_FILE_BYTES = MAX_ANALYSIS_FILE_MB * 1024 * 1024
+
+# Timeouts (seconds) for individual ffmpeg/tesseract operations.
+PROBE_TIMEOUT_SECONDS = max(5, _env_int("PROBE_TIMEOUT_SECONDS", 30))
+FRAME_TIMEOUT_SECONDS = max(10, _env_int("FRAME_TIMEOUT_SECONDS", 45))
+AUDIO_TIMEOUT_SECONDS = max(10, _env_int("AUDIO_TIMEOUT_SECONDS", 150))
+OCR_TIMEOUT_SECONDS = max(5, _env_int("OCR_TIMEOUT_SECONDS", 25))
+KEYFRAME_TIMEOUT_SECONDS = max(20, _env_int("KEYFRAME_TIMEOUT_SECONDS", 180))
+ANALYSIS_TIMEOUT_SECONDS = max(60, _env_int("ANALYSIS_TIMEOUT_SECONDS", 240))
+
+# OCR is the most CPU-expensive optional layer. Keep a per-call budget.
+OCR_BUDGET_SECONDS = max(5, _env_int("OCR_BUDGET_SECONDS", 30))
+OCR_OPEN_FRAMES = max(0, _env_int("OCR_OPEN_FRAMES", 4))
+
+# Audio is kept as a small 8 kHz mono WAV for waveform/spectrogram evidence.
+AUDIO_SAMPLE_RATE = max(4000, _env_int("AUDIO_SAMPLE_RATE", 8000))

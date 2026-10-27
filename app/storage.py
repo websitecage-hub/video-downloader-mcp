@@ -55,6 +55,7 @@ class FileStore:
         platform: str,
         duration: float | None = None,
         filename: str | None = None,
+        extra: dict | None = None,
     ) -> StoredFile:
         size = source_path.stat().st_size
         if size <= 0:
@@ -89,6 +90,7 @@ class FileStore:
                 source_url=source_url,
                 platform=platform,
                 duration=duration,
+                extra=dict(extra or {}),
             )
             self._files[token] = item
             return item
@@ -102,6 +104,14 @@ class FileStore:
                 self._remove_locked(token)
                 return None
             return item
+
+    def remove(self, token: str) -> bool:
+        """Immediately remove a stored file and its directory."""
+        with self._lock:
+            if token not in self._files:
+                return False
+            self._remove_locked(token)
+            return True
 
     def cleanup(self) -> int:
         removed = 0

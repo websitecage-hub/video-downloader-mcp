@@ -7,6 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+        tesseract-ocr tesseract-ocr-eng tesseract-ocr-osd fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
