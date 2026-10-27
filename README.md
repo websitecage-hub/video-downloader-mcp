@@ -78,6 +78,26 @@ Render's free tier gives 0.1 CPU. The design works within that:
 - Audio timeline (speech/silence), waveform, spectrogram.
 - Contact sheet, chapter storyboards, motion strips.
 
+## YouTube on a datacenter IP
+
+In 2026 YouTube rejects *all* anonymous access from datacenter IPs — every player client
+(`tv`, `android_vr`, `ios`, `web_safari`, …) fails with "Sign in to confirm you're not a bot"
+before a PO token can even be minted, and public Invidious/Piped/cobalt mirrors now require
+auth themselves. This server therefore ships a player-client fallback chain
+(`YTDLP_PLAYER_CLIENTS`) and relies on cookies for guaranteed access.
+
+**One-time fix (about 2 minutes):**
+
+1. In a browser logged into YouTube, install the extension
+   [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+   and export `youtube.com` in **Netscape format**.
+2. Render dashboard → your service → **Environment** → add `YTDLP_COOKIES` and paste the
+   full file contents as the value.
+3. Save — Render redeploys automatically. All YouTube downloads and analysis then work.
+
+Alternatives: `YTDLP_PROXY` (any residential proxy) or mount a Netscape file and point
+`COOKIES_FILE` at it.
+
 ## Limits and privacy
 
 - Max 150 MB per file; 1080p max; live streams unsupported.

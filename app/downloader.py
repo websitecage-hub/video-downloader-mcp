@@ -632,9 +632,12 @@ class VideoDownloader:
 
         if "sign in to confirm" in low or "not a bot" in low:
             return (
-                "YouTube is blocking downloads from this server's IP address. "
-                "Try another platform, or configure YTDLP_COOKIES on the server. "
-                f"Original error: {message[:300]}"
+                "YouTube blocks anonymous downloads from datacenter IPs (all player clients "
+                "and PO tokens rejected). One-time fix: export youtube.com cookies from a "
+                "logged-in browser (Netscape format, e.g. via the 'Get cookies.txt LOCALLY' "
+                "extension) and set the YTDLP_COOKIES env var on the Render service to the "
+                "file contents, then redeploy. Alternatively set YTDLP_PROXY to a residential "
+                f"proxy. Original error: {message[:200]}"
             )
         if "unsupported url" in low:
             return (
