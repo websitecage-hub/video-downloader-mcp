@@ -559,7 +559,7 @@ async def watch(request: Request) -> Response:
     return HTMLResponse(render_player(watch_page_data(session)))
 
 
-@mcp.custom_route("/health", methods=["GET"])
+@mcp.custom_route("/health", methods=["GET", "HEAD"])
 async def health(request: Request) -> Response:
     return JSONResponse(
         {
@@ -586,7 +586,18 @@ async def health(request: Request) -> Response:
                 "analysis_max_seconds": config.ANALYSIS_MAX_SECONDS,
                 "max_chapters": config.MAX_CHAPTERS,
             },
-        }
+        },
+        headers={"Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"},
+    )
+
+
+@mcp.custom_route("/ping", methods=["GET", "HEAD"])
+async def ping(request: Request) -> Response:
+    """Minimal keep-alive target for uptime monitors."""
+    return Response(
+        "pong",
+        media_type="text/plain",
+        headers={"Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"},
     )
 
 
