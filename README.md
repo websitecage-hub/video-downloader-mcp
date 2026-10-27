@@ -90,6 +90,22 @@ fix those cases too. TikTok works well with the default browser impersonation.
 Live streams are rejected. Private, paid, DRM-protected, and login-only content
 cannot be downloaded.
 
+## Public technical brief
+
+`site/index.html` is a self-contained page explaining the architecture, tools,
+request lifecycle, limits, security model, and deployment. To publish it as a
+static Cloudflare Worker:
+
+```bash
+python scripts/build_cloudflare_worker.py
+cd cloudflare
+npx wrangler deploy --temporary
+```
+
+Wrangler's `--temporary` mode creates a public preview account without a
+Cloudflare login. The preview account can be claimed within 60 minutes to keep
+the URL long-term.
+
 ## Local development
 
 ```bash

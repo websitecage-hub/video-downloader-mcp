@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Downloader MCP — How it works</title>
+<meta name="description" content="A public, no-auth MCP server that gives ChatGPT the ability to download videos and audio from the internet using yt-dlp, ffmpeg, and Render's free tier.">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #070b12;
+    --panel: #0d1420;
+    --panel-2: #111a28;
+    --line: #223047;
+    --line-soft: #182335;
+    --text: #e8eef8;
+    --muted: #91a4bf;
+    --accent: #5eead4;
+    --accent-2: #a3e635;
+    --warn: #fbbf24;
+    --bad: #fb7185;
+    --blue: #7dd3fc;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 520px at 50% -12%, rgba(45, 212, 191, .12), transparent 62%),
+      radial-gradient(900px 500px at 90% 10%, rgba(125, 211, 252, .07), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font: 16px/1.65 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
+
+  header.hero { padding: 76px 0 44px; border-bottom: 1px solid var(--line-soft); }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 9px;
+    font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
+    padding: 9px 13px; background: rgba(13, 20, 32, .7);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); }
+  h1 {
+    margin: 22px 0 14px; font-size: clamp(42px, 7vw, 76px); line-height: 1.02;
+    letter-spacing: -.045em; font-weight: 800;
+    background: linear-gradient(120deg, #fff 20%, #b9f8ee 55%, #7dd3fc 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede { margin: 0; max-width: 800px; color: var(--muted); font-size: clamp(17px, 2.2vw, 21px); }
+  .badges { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
+  .badge {
+    font: 600 12px/1 var(--mono); color: #c7d5e8; border: 1px solid var(--line);
+    background: rgba(17, 26, 40, .8); padding: 9px 12px; border-radius: 8px;
+  }
+  .badge.good { color: var(--accent); border-color: rgba(94, 234, 212, .35); }
+  .status {
+    margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    border: 1px solid rgba(251, 191, 36, .28); background: rgba(251, 191, 36, .06);
+    border-radius: 12px; padding: 13px 16px; color: #fde68a; font-size: 14px;
+  }
+  .status strong { color: #fff; }
+
+  main { padding: 44px 0 72px; }
+  section { margin: 0 0 46px; }
+  .kicker { color: var(--accent); font: 700 12px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; margin-bottom: 10px; }
+  h2 { margin: 0 0 16px; font-size: clamp(26px, 4vw, 36px); letter-spacing: -.025em; line-height: 1.15; }
+  h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.01em; }
+  p { margin: 0 0 14px; color: #c3d0e2; }
+  .muted { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  .grid { display: grid; gap: 16px; }
+  .grid.two { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .grid.three { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .card {
+    background: linear-gradient(180deg, rgba(17, 26, 40, .92), rgba(11, 18, 29, .92));
+    border: 1px solid var(--line); border-radius: 16px; padding: 22px;
+  }
+  .card p:last-child { margin-bottom: 0; }
+  .card .tag { display: inline-block; font: 700 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); border: 1px solid rgba(94, 234, 212, .28); background: rgba(94, 234, 212, .06); padding: 6px 8px; border-radius: 6px; margin-bottom: 12px; }
+  .card .tag.audio { color: var(--blue); border-color: rgba(125, 211, 252, .28); background: rgba(125, 211, 252, .06); }
+  .card .tag.info { color: var(--accent-2); border-color: rgba(163, 230, 53, .28); background: rgba(163, 230, 53, .06); }
+  code { font-family: var(--mono); font-size: .9em; background: rgba(125, 211, 252, .08); border: 1px solid rgba(125, 211, 252, .14); border-radius: 5px; padding: 2px 6px; color: #bae6fd; }
+  .mono { font-family: var(--mono); }
+
+  pre.diagram {
+    margin: 0; padding: 22px; overflow-x: auto;
+    background: #05080d; border: 1px solid var(--line); border-radius: 14px;
+    color: #9fb3c8; font: 13px/1.75 var(--mono); white-space: pre;
+  }
+  pre.diagram .hl { color: var(--accent); }
+  pre.diagram .dim { color: #60748c; }
+
+  .steps { list-style: none; counter-reset: step; padding: 0; margin: 0; display: grid; gap: 12px; }
+  .steps li {
+    counter-increment: step; position: relative; padding: 15px 18px 15px 58px;
+    background: rgba(17, 26, 40, .7); border: 1px solid var(--line); border-radius: 12px;
+    color: #c3d0e2;
+  }
+  .steps li::before {
+    content: counter(step, decimal-leading-zero); position: absolute; left: 16px; top: 15px;
+    font: 700 12px/1.5 var(--mono); color: var(--accent); border-right: 1px solid var(--line);
+    padding-right: 12px;
+  }
+  .steps li strong { color: #fff; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+  table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: 14px; }
+  th, td { text-align: left; padding: 13px 16px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th { color: var(--muted); font: 700 11px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; background: rgba(17, 26, 40, .8); }
+  tr:last-child td { border-bottom: 0; }
+  td strong { color: #fff; }
+  .ok { color: var(--accent); font-weight: 700; }
+  .warn { color: var(--warn); font-weight: 700; }
+  .no { color: var(--bad); font-weight: 700; }
+
+  .note {
+    border-left: 3px solid var(--accent); background: rgba(94, 234, 212, .06);
+    border-radius: 0 10px 10px 0; padding: 14px 18px; color: #c7f9f0; font-size: 14px;
+  }
+  .note.warn { border-left-color: var(--warn); background: rgba(251, 191, 36, .06); color: #fde68a; }
+  .note.bad { border-left-color: var(--bad); background: rgba(251, 113, 133, .06); color: #fecdd3; }
+
+  .kv { display: grid; grid-template-columns: 180px 1fr; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .kv div { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+  .kv div:nth-child(odd) { color: var(--muted); background: rgba(17, 26, 40, .65); font-family: var(--mono); font-size: 12px; }
+  .kv div:nth-last-child(-n+2) { border-bottom: 0; }
+
+  .checklist { list-style: none; padding: 0; margin: 0; display: grid; gap: 9px; }
+  .checklist li { position: relative; padding-left: 27px; color: #c3d0e2; font-size: 14px; }
+  .checklist li::before { content: "✓"; position: absolute; left: 0; top: 0; color: var(--accent); font-weight: 800; }
+  .checklist li.pending::before { content: "○"; color: var(--warn); }
+
+  footer { border-top: 1px solid var(--line-soft); padding: 28px 0 46px; color: var(--muted); font-size: 13px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
+
+  @media (max-width: 640px) {
+    header.hero { padding: 52px 0 34px; }
+    .kv { grid-template-columns: 1fr; }
+    .kv div:nth-child(odd) { border-bottom: 0; padding-bottom: 2px; }
+    .kv div:nth-child(even) { border-bottom: 1px solid var(--line-soft); }
+    .kv div:last-child { border-bottom: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow"><span class="dot"></span> MCP · yt-dlp · ffmpeg · Render</div>
+    <h1>Video Downloader MCP</h1>
+    <p class="lede">
+      A public, no-auth MCP server that gives ChatGPT the power to download videos and audio
+      from the internet — then hand you a temporary direct link. Built for Render's free tier.
+    </p>
+    <div class="badges">
+      <span class="badge good">Streamable HTTP</span>
+      <span class="badge">yt-dlp</span>
+      <span class="badge">ffmpeg</span>
+      <span class="badge">Docker</span>
+      <span class="badge">Render free tier</span>
+      <span class="badge">No auth</span>
+    </div>
+    <div class="status">
+      <strong>Status:</strong> build complete, end-to-end tested locally and in Docker.
+      Live Render deployment is pending the GitHub repo and Render API key.
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section>
+    <div class="kicker">The short version</div>
+    <h2>ChatGPT asks. The server downloads. You click the link.</h2>
+    <div class="grid three">
+      <div class="card">
+        <h3>1. You send a link</h3>
+        <p class="small">You paste a TikTok, YouTube, Instagram, X, Reddit, Vimeo, or direct video URL into ChatGPT.</p>
+      </div>
+      <div class="card">
+        <h3>2. ChatGPT calls a tool</h3>
+        <p class="small">The custom connector exposes <code>download_video</code>. ChatGPT calls it over HTTPS at <code>/mcp</code>.</p>
+      </div>
+      <div class="card">
+        <h3>3. The server does the work</h3>
+        <p class="small">yt-dlp extracts the media, ffmpeg merges audio and video, and the file is stored temporarily.</p>
+      </div>
+      <div class="card">
+        <h3>4. You get a link</h3>
+        <p class="small">ChatGPT shows a clickable URL. You click it and the file downloads from the server.</p>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px">
+      ChatGPT cannot receive a binary file through an MCP tool. The video never travels through the chat.
+      The <strong>temporary download link is the deliverable</strong>.
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Architecture</div>
+    <h2>What sits between ChatGPT and the internet</h2>
+    <pre class="diagram"><span class="hl">You</span> ── "Download this video" ──▶ <span class="hl">ChatGPT</span>
+                                  │
+                                  │  MCP tool call · HTTPS POST /mcp
+                                  ▼
+                    ┌─────────────────────────────┐
+                    │  Render Docker web service  │
+                    │  FastMCP + Starlette        │
+                    │  Python 3.12 · ffmpeg       │
+                    └──────────────┬──────────────┘
+                                   │
+                    validate URL · rate limit · semaphore
+                                   │
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │  yt-dlp subprocess          │
+                    │  format selection · merge   │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │  TikTok / YouTube / IG / …  │
+                    │  public media streams       │
+                    └──────────────┬──────────────┘
+                                   │  video + audio
+                                   ▼
+                    ┌─────────────────────────────┐
+                    │  /tmp/video-mcp/&lt;token&gt;/    │
+                    │  &lt;clean-name&gt;.mp4           │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
+              <span class="hl">https://service.onrender.com/files/&lt;token&gt;/video.mp4</span>
+                                   │
+                                   ▼
+                    <span class="hl">ChatGPT shows the link → you click → download</span></pre>
+  </section>
+
+  <section>
+    <div class="kicker">The tools</div>
+    <h2>Three actions ChatGPT can take</h2>
+    <div class="grid three">
+      <div class="card">
+        <span class="tag">download_video</span>
+        <h3>Download a video</h3>
+        <p class="small">Accepts a public URL and an optional quality: <code>360p</code>, <code>480p</code>, <code>720p</code> (default), <code>1080p</code>, or <code>best</code>.</p>
+        <p class="small muted">Returns title, platform, duration, size, filename, and a temporary MP4 link.</p>
+      </div>
+      <div class="card">
+        <span class="tag audio">download_audio</span>
+        <h3>Extract audio</h3>
+        <p class="small">Downloads the best audio stream and converts it to MP3 at 192 kbps using ffmpeg.</p>
+        <p class="small muted">Returns a temporary MP3 link plus the same metadata.</p>
+      </div>
+      <div class="card">
+        <span class="tag info">get_video_info</span>
+        <h3>Inspect a video</h3>
+        <p class="small">Reads metadata without downloading: title, uploader, duration, thumbnail, view count, live status, available qualities.</p>
+        <p class="small muted">Useful when ChatGPT needs details before choosing a quality.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Request lifecycle</div>
+    <h2>Exactly what happens during a download</h2>
+    <ol class="steps">
+      <li><strong>ChatGPT sends the URL</strong> to the MCP endpoint as a <code>tools/call</code> request.</li>
+      <li><strong>URL validation runs.</strong> Only <code>http</code> and <code>https</code> are allowed. The hostname is resolved, and private, loopback, link-local, reserved, and cloud-metadata addresses are rejected.</li>
+      <li><strong>Rate limit check.</strong> A global sliding window allows 40 downloads per hour by default.</li>
+      <li><strong>Concurrency check.</strong> At most 2 downloads run at once. Extra requests wait briefly, then receive a “server busy” message.</li>
+      <li><strong>yt-dlp starts</strong> as a subprocess with playlists disabled, live streams rejected, a 150 MB cap, and a hard 180-second timeout.</li>
+      <li><strong>Format selection.</strong> The server prefers MP4/H.264/AAC, caps quality at 1080p, and asks yt-dlp to merge separate streams when needed.</li>
+      <li><strong>ffmpeg merges</strong> the selected video and audio into one playable file.</li>
+      <li><strong>The file is moved</strong> into <code>/tmp/video-mcp/&lt;random-token&gt;/&lt;clean-name&gt;.mp4</code>.</li>
+      <li><strong>A JSON result is returned</strong> with a public URL built from Render's <code>RENDER_EXTERNAL_URL</code>.</li>
+      <li><strong>ChatGPT shows the link.</strong> You click it, Render serves the file with an attachment header, and the cleanup loop deletes it after the TTL.</li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="kicker">Under the hood</div>
+    <h2>Why it works — and where it breaks</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>yt-dlp is the engine</h3>
+        <p class="small">yt-dlp supports YouTube, TikTok, Instagram, Facebook, X/Twitter, Reddit, Vimeo, Twitch clips, Dailymotion, Streamable, and hundreds of smaller sites. It extracts the real media stream from a page, handles separate video/audio tracks, and passes them to ffmpeg.</p>
+      </div>
+      <div class="card">
+        <h3>Browser impersonation</h3>
+        <p class="small">The server uses <code>curl-cffi</code> with a Chrome TLS fingerprint. This is what makes TikTok work reliably from a datacenter. It is enabled by default and can be disabled with <code>YTDLP_IMPERSONATE</code>.</p>
+      </div>
+      <div class="card">
+        <h3>Optional cookies and proxy</h3>
+        <p class="small">Login-only content can be handled with <code>YTDLP_COOKIES</code> (Netscape cookies.txt) or <code>COOKIES_FILE</code>. A residential/mobile proxy can be supplied with <code>YTDLP_PROXY</code>. Neither is required for public TikTok or direct MP4 URLs.</p>
+      </div>
+      <div class="card">
+        <h3>Safe by construction</h3>
+        <p class="small">User input is passed as an argument list, never interpolated into a shell. There is no command-injection path through the URL. File names are sanitized, tokens are random, and storage is capped.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Platform reality</div>
+    <h2>What works, what needs help</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Source</th><th>Status</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>TikTok</strong></td><td class="ok">Works</td><td>Tested end-to-end, including through the Docker container. Chrome impersonation is the key.</td></tr>
+          <tr><td><strong>Direct MP4 / video URLs</strong></td><td class="ok">Works</td><td>Generic extractor handles direct files and simple pages.</td></tr>
+          <tr><td><strong>YouTube</strong></td><td class="warn">Often blocked</td><td>Datacenter IPs frequently get “Sign in to confirm you’re not a bot.” Add cookies or a residential proxy to fix it.</td></tr>
+          <tr><td><strong>Instagram / Vimeo</strong></td><td class="warn">Sometimes login-gated</td><td>Public posts may still require a session. Cookies fix those cases.</td></tr>
+          <tr><td><strong>Facebook / X</strong></td><td class="warn">Content-dependent</td><td>Some posts are public; others require login or are region-restricted.</td></tr>
+          <tr><td><strong>Private / paid / DRM / live</strong></td><td class="no">Not supported</td><td>The server does not bypass DRM, paywalls, or private-content restrictions. Live streams are rejected.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note warn" style="margin-top:16px">
+      “Any platform” really means “any public content that yt-dlp can access from the server’s IP.”
+      Platform blocking is the main real-world limitation — not the MCP code.
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Deployment</div>
+    <h2>Render free tier, Docker, one service</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Service shape</h3>
+        <div class="kv">
+          <div>Type</div><div>Web Service</div>
+          <div>Runtime</div><div>Docker</div>
+          <div>Plan</div><div>Free · 512 MB RAM · 0.1 CPU</div>
+          <div>Health check</div><div><code>/health</code></div>
+          <div>Public port</div><div><code>0.0.0.0:$PORT</code> (Render injects <code>PORT</code>)</div>
+          <div>Public URL</div><div><code>https://&lt;service&gt;.onrender.com</code></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Free-tier behavior</h3>
+        <p class="small">The service spins down after about 15 minutes of inactivity. The first request after a pause can take 30–60 seconds while the container starts.</p>
+        <p class="small">Disk is ephemeral. Downloaded files and their links disappear if the service restarts or spins down. Download and open links promptly.</p>
+        <p class="small">The Docker image includes Python 3.12, ffmpeg, yt-dlp, curl-cffi, and the MCP SDK. It runs as a non-root user.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">ChatGPT setup</div>
+    <h2>Adding the connector</h2>
+    <ol class="steps">
+      <li>Open <strong>ChatGPT → Settings → Connectors → Advanced → Developer mode</strong>.</li>
+      <li>Create a custom connector named <strong>Video Downloader</strong>.</li>
+      <li>Set the MCP server URL to <code>https://&lt;service&gt;.onrender.com/mcp</code>.</li>
+      <li>Choose <strong>No authentication</strong>.</li>
+      <li>In a chat, ask: <em>“Download this video: &lt;link&gt;”</em> and open the link ChatGPT returns.</li>
+    </ol>
+    <div class="note" style="margin-top:16px">
+      Custom connectors require a ChatGPT plan that supports them. The server must be reachable over public HTTPS — Render provides that automatically.
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Limits</div>
+    <h2>Defaults chosen for a 512 MB free instance</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Setting</th><th>Default</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Max file size</strong></td><td>150 MB</td><td>Keeps memory and disk pressure manageable.</td></tr>
+          <tr><td><strong>Total temp storage</strong></td><td>400 MB</td><td>Prevents the ephemeral disk from filling up.</td></tr>
+          <tr><td><strong>Link lifetime</strong></td><td>60 minutes</td><td>Capability URLs are temporary by design.</td></tr>
+          <tr><td><strong>Concurrent downloads</strong></td><td>2</td><td>0.1 CPU cannot merge many videos at once.</td></tr>
+          <tr><td><strong>Rate limit</strong></td><td>40 downloads/hour</td><td>Protects the free instance from abuse.</td></tr>
+          <tr><td><strong>Download timeout</strong></td><td>180 seconds</td><td>Kills stuck jobs and orphaned ffmpeg processes.</td></tr>
+          <tr><td><strong>Max quality</strong></td><td>1080p</td><td>4K would exceed memory, CPU, and size limits.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Security</div>
+    <h2>Public and unauthenticated — by design</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>What is protected</h3>
+        <ul class="checklist">
+          <li>SSRF checks reject private, loopback, link-local, reserved, and metadata addresses.</li>
+          <li>Only <code>http</code>/<code>https</code> URLs are accepted; credentials in URLs are rejected.</li>
+          <li>Random capability tokens make file URLs unguessable.</li>
+          <li>Global rate limit, concurrency limit, size caps, and storage caps.</li>
+          <li>No shell execution of user input.</li>
+          <li>Files expire automatically; a cleanup loop runs every 5 minutes.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>What to know</h3>
+        <p class="small">Anyone with the service URL can use it. The global rate limit protects the instance, but it is not per-user.</p>
+        <p class="small">The initial URL is validated, but yt-dlp follows redirects internally, so a malicious public URL that redirects to an internal address is a residual risk.</p>
+        <p class="small">For a private deployment, put the service behind an access token or a secret path at the proxy/CDN layer. Never enable <code>ALLOW_PRIVATE_URLS</code> on a public server.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Verification</div>
+    <h2>What was actually tested</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Automated</h3>
+        <ul class="checklist">
+          <li>32 unit and end-to-end tests pass.</li>
+          <li>MCP <code>initialize</code>, <code>tools/list</code>, and <code>tools/call</code> verified over the real protocol.</li>
+          <li>E2E test downloads a generated MP4 and verifies the bytes.</li>
+          <li>SSRF attempts against localhost and private IPs are rejected.</li>
+          <li>Docker image builds and runs as a non-root user with ffmpeg.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Real-world</h3>
+        <ul class="checklist">
+          <li>Real TikTok video downloaded (MP4, ~1.9 MB).</li>
+          <li>MP3 audio extraction verified.</li>
+          <li>Direct MP4 download verified.</li>
+          <li>Public direct download works with SSRF protection enabled.</li>
+          <li>YouTube was blocked from the test datacenter IP by bot protection — documented, not hidden.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">Deploy checklist</div>
+    <h2>What happens next</h2>
+    <ul class="checklist">
+      <li class="pending">Push the repo to GitHub.</li>
+      <li class="pending">Create the Render Docker web service on the free plan.</li>
+      <li class="pending">Wait for the image build and health check.</li>
+      <li class="pending">Verify the public <code>/health</code> and <code>/mcp</code> endpoints.</li>
+      <li class="pending">Add <code>https://&lt;service&gt;.onrender.com/mcp</code> to ChatGPT as a custom connector.</li>
+      <li class="pending">Optional: add YouTube cookies or a residential proxy for YouTube reliability.</li>
+    </ul>
+    <div class="note" style="margin-top:16px">
+      The MCP itself is built and tested. The remaining steps need the GitHub repository URL and a Render API key.
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker">FAQ</div>
+    <h2>Quick answers</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Why not just use ChatGPT browsing?</h3>
+        <p class="small">Browsing can read a page, but it cannot run yt-dlp, merge separate audio/video streams with ffmpeg, or hand you a saved media file. The MCP gives ChatGPT an action, not just a view.</p>
+      </div>
+      <div class="card">
+        <h3>Does the video pass through ChatGPT?</h3>
+        <p class="small">No. The server downloads it and returns a link. ChatGPT only sees metadata and the URL.</p>
+      </div>
+      <div class="card">
+        <h3>Is it really “any platform”?</h3>
+        <p class="small">It is “any public content yt-dlp can access from the server’s IP.” That covers a huge number of sites, but not DRM, private, paid, or live content.</p>
+      </div>
+      <div class="card">
+        <h3>Why do links expire?</h3>
+        <p class="small">Files live on ephemeral storage. Expiring capability URLs keep the public service from becoming a permanent file host and protect the free instance.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Video Downloader MCP · technical brief · October 2026</span>
+    <span>Static page hosted on Cloudflare Workers · MCP server runs on Render</span>
+  </div>
+</footer>
+
+</body>
+</html>
