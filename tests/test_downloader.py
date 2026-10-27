@@ -27,7 +27,8 @@ def test_friendly_error_bot_block():
     message = VideoDownloader._friendly_error(
         "ERROR: [youtube] abc: Sign in to confirm you're not a bot."
     )
-    assert "blocking downloads" in message
+    assert "YTDLP_COOKIES" in message
+    assert "YTDLP_PROXY" in message
 
 
 def test_friendly_error_private():
