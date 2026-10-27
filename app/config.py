@@ -75,6 +75,18 @@ YTDLP_PROXY = os.getenv("YTDLP_PROXY", "").strip()
 # Escape hatch for power users, e.g. "--extractor-args youtube:player_client=android"
 YTDLP_EXTRA_ARGS = os.getenv("YTDLP_EXTRA_ARGS", "").strip()
 
+# YouTube bot-wall bypass: when the datacenter IP gets "Sign in to confirm you're not
+# a bot", retry the same request with each of these player clients until one works.
+# Order matters — cheapest/most reliable first. Override with a comma-separated list.
+YTDLP_PLAYER_CLIENTS = [
+    client.strip()
+    for client in os.getenv(
+        "YTDLP_PLAYER_CLIENTS",
+        "default,tv,tv_simply,android_vr,ios,web_safari,web_embedded,mweb",
+    ).split(",")
+    if client.strip()
+]
+
 # ---------------------------------------------------------------------------
 # Analysis / evidence engine
 # ---------------------------------------------------------------------------

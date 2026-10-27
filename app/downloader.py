@@ -156,8 +156,22 @@ class VideoDownloader:
         self._active += 1
         job_dir = Path(tempfile.mkdtemp(prefix="job-", dir=config.DOWNLOADS_DIR))
         try:
-            cmd = self._build_download_cmd(url, quality, audio_only, job_dir, captions=captions)
-            info = await self._run(cmd, config.DOWNLOAD_TIMEOUT_SECONDS)
+            info: dict | None = None
+            bot_error: DownloadError | None = None
+            for client in self._client_attempts(url):
+                cmd = self._build_download_cmd(url, quality, audio_only, job_dir, captions=captions)
+                if client and client != "default":
+                    cmd += ["--extractor-args", f"youtube:player_client={client}"]
+                try:
+                    info = await self._run(cmd, config.DOWNLOAD_TIMEOUT_SECONDS)
+                    break
+                except DownloadError as exc:
+                    if self._is_bot_error(str(exc)):
+                        bot_error = exc
+                        continue
+                    raise
+            if info is None:
+                raise bot_error or DownloadError("The download failed.")
 
             video = self._first_video(info)
             if video.get("is_live"):
@@ -273,29 +287,42 @@ class VideoDownloader:
 
     async def get_info(self, url: str) -> dict:
         url = await asyncio.to_thread(validate_url, url)
-        cmd = [
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            "--no-playlist",
-            "--playlist-items",
-            "1",
-            "--skip-download",
-            "--no-warnings",
-            "--no-progress",
-            "--no-color",
-            "-J",
-            "--socket-timeout",
-            "15",
-            "--retries",
-            "1",
-            "--extractor-retries",
-            "1",
-        ]
-        self._add_network_args(cmd)
-        cmd.append(url)
-
-        info = await self._run(cmd, config.INFO_TIMEOUT_SECONDS)
+        info: dict | None = None
+        bot_error: DownloadError | None = None
+        for client in self._client_attempts(url):
+            cmd = [
+                sys.executable,
+                "-m",
+                "yt_dlp",
+                "--no-playlist",
+                "--playlist-items",
+                "1",
+                "--skip-download",
+                "--no-warnings",
+                "--no-progress",
+                "--no-color",
+                "-J",
+                "--socket-timeout",
+                "15",
+                "--retries",
+                "1",
+                "--extractor-retries",
+                "1",
+            ]
+            self._add_network_args(cmd)
+            if client and client != "default":
+                cmd += ["--extractor-args", f"youtube:player_client={client}"]
+            cmd.append(url)
+            try:
+                info = await self._run(cmd, config.INFO_TIMEOUT_SECONDS)
+                break
+            except DownloadError as exc:
+                if self._is_bot_error(str(exc)):
+                    bot_error = exc
+                    continue
+                raise
+        if info is None:
+            raise bot_error or DownloadError("Could not read the video metadata.")
         video = self._first_video(info)
 
         heights = set()
@@ -340,37 +367,43 @@ class VideoDownloader:
         except Exception:
             return []
         dest_dir.mkdir(parents=True, exist_ok=True)
-        cmd = [
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            "--no-playlist",
-            "--skip-download",
-            "--write-subs",
-            "--write-auto-subs",
-            "--sub-langs",
-            language,
-            "--sub-format",
-            "json3/vtt/srt/best",
-            "--no-warnings",
-            "--no-progress",
-            "--no-color",
-            "--restrict-filenames",
-            "-J",
-            "--socket-timeout",
-            "15",
-            "--retries",
-            "1",
-            "--output",
-            str(dest_dir / "%(id).100B.%(ext)s"),
-        ]
-        self._add_network_args(cmd)
-        cmd.append(url)
-        try:
-            await self._run(cmd, 60)
-        except Exception:
-            return []
-        return self._caption_files(dest_dir)
+        for client in self._client_attempts(url):
+            cmd = [
+                sys.executable,
+                "-m",
+                "yt_dlp",
+                "--no-playlist",
+                "--skip-download",
+                "--write-subs",
+                "--write-auto-subs",
+                "--sub-langs",
+                language,
+                "--sub-format",
+                "json3/vtt/srt/best",
+                "--no-warnings",
+                "--no-progress",
+                "--no-color",
+                "--restrict-filenames",
+                "-J",
+                "--socket-timeout",
+                "15",
+                "--retries",
+                "1",
+                "--output",
+                str(dest_dir / "%(id).100B.%(ext)s"),
+            ]
+            self._add_network_args(cmd)
+            if client and client != "default":
+                cmd += ["--extractor-args", f"youtube:player_client={client}"]
+            cmd.append(url)
+            try:
+                await self._run(cmd, 60)
+            except Exception:
+                continue
+            files = self._caption_files(dest_dir)
+            if files:
+                return files
+        return []
 
     @staticmethod
     def choose_caption_language(info: dict) -> str | None:
@@ -466,6 +499,24 @@ class VideoDownloader:
         self._add_network_args(cmd)
         cmd.append(url)
         return cmd
+
+    @staticmethod
+    def _is_bot_error(message: str) -> bool:
+        low = (message or "").lower()
+        return "sign in to confirm" in low or "not a bot" in low
+
+    @staticmethod
+    def _is_youtube(url: str) -> bool:
+        low = (url or "").lower()
+        return "youtube.com" in low or "youtu.be" in low
+
+    def _client_attempts(self, url: str):
+        """Player clients to try for this URL, in order (bot-wall bypass)."""
+        if not self._is_youtube(url):
+            yield None
+            return
+        for client in config.YTDLP_PLAYER_CLIENTS or [None]:
+            yield client or None
 
     @staticmethod
     def _add_network_args(cmd: list[str]) -> None:

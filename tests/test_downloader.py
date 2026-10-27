@@ -37,3 +37,17 @@ def test_friendly_error_private():
 
 def test_friendly_error_passthrough():
     assert VideoDownloader._friendly_error("ERROR: Something odd happened") == "Something odd happened"
+
+
+def test_bot_error_detection_and_client_rotation():
+    from app import config
+
+    downloader = VideoDownloader(store=None)  # type: ignore[arg-type]
+    assert downloader._is_bot_error("Sign in to confirm you're not a bot.")
+    assert not downloader._is_bot_error("HTTP Error 403: Forbidden")
+
+    assert list(downloader._client_attempts("https://example.com/v.mp4")) == [None]
+    clients = list(downloader._client_attempts("https://www.youtube.com/watch?v=abc"))
+    assert clients == config.YTDLP_PLAYER_CLIENTS
+    assert clients[0] == "default" and len(clients) > 1
+    assert list(downloader._client_attempts("https://youtu.be/abc")) == clients
