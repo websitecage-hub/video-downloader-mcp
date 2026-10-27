@@ -66,6 +66,7 @@
     border-radius: 12px; padding: 13px 16px; color: #fde68a; font-size: 14px;
   }
   .status strong { color: #fff; }
+  .status.live { border-color: rgba(94, 234, 212, .3); background: rgba(94, 234, 212, .07); color: #c7f9f0; }
 
   main { padding: 44px 0 72px; }
   section { margin: 0 0 46px; }
@@ -168,14 +169,32 @@
       <span class="badge">Render free tier</span>
       <span class="badge">No auth</span>
     </div>
-    <div class="status">
-      <strong>Status:</strong> build complete, end-to-end tested locally and in Docker.
-      Live Render deployment is pending the GitHub repo and Render API key.
+    <div class="status live">
+      <strong>Live now:</strong> the MCP is deployed on Render at
+      <code>https://video-downloader-mcp.onrender.com/mcp</code><br>
+      TikTok and direct MP4 downloads were verified in production.
     </div>
   </div>
 </header>
 
 <main class="wrap">
+
+  <section>
+    <div class="kicker">Live deployment</div>
+    <h2>It’s running on Render</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>MCP endpoint</h3>
+        <code>https://video-downloader-mcp.onrender.com/mcp</code>
+        <p class="small" style="margin-top:12px">Add this URL to ChatGPT as a custom connector with <strong>No authentication</strong>.</p>
+      </div>
+      <div class="card">
+        <h3>Service health</h3>
+        <p class="small">The public health endpoint reports the yt-dlp version, uptime, active downloads, and storage usage.</p>
+        <p class="small"><a href="https://video-downloader-mcp.onrender.com/health">video-downloader-mcp.onrender.com/health</a></p>
+      </div>
+    </div>
+  </section>
 
   <section>
     <div class="kicker">The short version</div>
@@ -320,7 +339,7 @@
         <tbody>
           <tr><td><strong>TikTok</strong></td><td class="ok">Works</td><td>Tested end-to-end, including through the Docker container. Chrome impersonation is the key.</td></tr>
           <tr><td><strong>Direct MP4 / video URLs</strong></td><td class="ok">Works</td><td>Generic extractor handles direct files and simple pages.</td></tr>
-          <tr><td><strong>YouTube</strong></td><td class="warn">Often blocked</td><td>Datacenter IPs frequently get “Sign in to confirm you’re not a bot.” Add cookies or a residential proxy to fix it.</td></tr>
+          <tr><td><strong>YouTube</strong></td><td class="warn">Blocked on this Render IP</td><td>Tested in production: “Sign in to confirm you’re not a bot.” Add cookies or a residential proxy to fix it.</td></tr>
           <tr><td><strong>Instagram / Vimeo</strong></td><td class="warn">Sometimes login-gated</td><td>Public posts may still require a session. Cookies fix those cases.</td></tr>
           <tr><td><strong>Facebook / X</strong></td><td class="warn">Content-dependent</td><td>Some posts are public; others require login or are region-restricted.</td></tr>
           <tr><td><strong>Private / paid / DRM / live</strong></td><td class="no">Not supported</td><td>The server does not bypass DRM, paywalls, or private-content restrictions. Live streams are rejected.</td></tr>
@@ -448,15 +467,15 @@
     <div class="kicker">Deploy checklist</div>
     <h2>What happens next</h2>
     <ul class="checklist">
-      <li class="pending">Push the repo to GitHub.</li>
-      <li class="pending">Create the Render Docker web service on the free plan.</li>
-      <li class="pending">Wait for the image build and health check.</li>
-      <li class="pending">Verify the public <code>/health</code> and <code>/mcp</code> endpoints.</li>
-      <li class="pending">Add <code>https://&lt;service&gt;.onrender.com/mcp</code> to ChatGPT as a custom connector.</li>
+      <li>Push the repo to GitHub.</li>
+      <li>Create the Render Docker web service on the free plan.</li>
+      <li>Wait for the image build and health check.</li>
+      <li>Verify the public <code>/health</code> and <code>/mcp</code> endpoints.</li>
+      <li class="pending">Add <code>https://video-downloader-mcp.onrender.com/mcp</code> to ChatGPT as a custom connector.</li>
       <li class="pending">Optional: add YouTube cookies or a residential proxy for YouTube reliability.</li>
     </ul>
     <div class="note" style="margin-top:16px">
-      The MCP itself is built and tested. The remaining steps need the GitHub repository URL and a Render API key.
+      The MCP is live and verified. The only remaining step is adding the connector in ChatGPT and, optionally, configuring cookies for YouTube.
     </div>
   </section>
 

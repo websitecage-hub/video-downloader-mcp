@@ -1,5 +1,11 @@
 # Video Downloader MCP
 
+## Live deployment
+
+- **MCP endpoint:** https://video-downloader-mcp.onrender.com/mcp
+- **Health:** https://video-downloader-mcp.onrender.com/health
+- **Technical brief:** https://video-mcp-brief.bramble-cannon.workers.dev
+
 A public, no-auth MCP server that lets ChatGPT download videos and audio from
 YouTube, TikTok, Instagram, Facebook, X/Twitter, Reddit, Vimeo, Twitch clips,
 Dailymotion, and many other sites. Powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp)
